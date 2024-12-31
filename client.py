@@ -74,5 +74,6 @@ def start_client():
     print("All messages sent and acknowledged!")
     client_socket.close()
 
+
 if __name__ == "__main__":
     start_client()

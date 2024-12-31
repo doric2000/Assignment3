@@ -86,11 +86,18 @@ def start_server():
                     print(
                         f"Adding early messages: {highest_contiguous_ack}: {received_messages[highest_contiguous_ack]}")
                     del received_messages[highest_contiguous_ack] #deleting the message that has been added.
-            # message get but not in order , so we have to store it until we will get the messages before it in order.
+
+                    #sending ack for the arrival after completing missed package from the buffer.
+                    ack_message = f"ACK{highest_contiguous_ack}"
+                    client_socket.send(ack_message.encode('utf-8'))
+                    print(f"Sent: {ack_message}")
+            # message arrive but not in order , so we have to store it until we will get the messages before it in order.
             else:
                 print(f"Message {message_number} not in order,storing the message: {message_data}")
                 received_messages[message_number] = message_data
-
+                # Send the same ACK (not updated)
+                ack_message = f"ACK{highest_contiguous_ack}"
+                client_socket.send(ack_message.encode('utf-8'))
             # Send ACK only after receiving `window_size` messages or all messages
             if messages_received_in_window == window_size or highest_contiguous_ack == len(received_messages) - 1:
                 ack_message = f"ACK{highest_contiguous_ack}"
