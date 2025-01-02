@@ -4,6 +4,17 @@ import time
 SERVER_HOST = '127.0.0.1'
 SERVER_PORT = 12345
 
+def read_parameters_from_file(file_path):
+    """
+    Reads the message parameters from a file.
+    """
+    with open(file_path, 'r') as file:
+        data = file.read()
+    parameters = {}
+    for line in data.splitlines():
+        key, value = line.split(':', 1)
+        parameters[key.strip()] = value.strip().strip('"')
+    return parameters
 
 def recv_message_with_boundary(client_socket):
     """
@@ -41,17 +52,25 @@ def start_server():
         # Getting the request from the client for the max-message-size
         data = client_socket.recv(1024).decode('utf-8')
         if data.startswith("MAX_SIZE_REQUEST"):
-            max_size = 10  # Example maximum size
+            # Get parameters from user or file
+            source = input("Enter 'file' to read MAX SIZE of the message from a file or 'input' to provide manually: ").strip().lower()
+            if source == 'file':
+                file_path = input("Enter the file path: ").strip()
+                params = read_parameters_from_file(file_path)
+                max_size = int(params['maximum_msg_size'])  # לבדוק ממי צריך לקבל
+            else:
+                max_size = int(input("Enter the maximum message size: ").strip())
+
             client_socket.send(str(max_size).encode('utf-8'))
 
-        # Receive the sliding window size from the client
-        data = client_socket.recv(1024).decode('utf-8')
-        if data.startswith("WINDOW_SIZE:"):
-            window_size = int(data.split(":")[1])
-            print(f"Sliding window size received: {window_size}")
+        # # Receive the sliding window size from the client
+        # data = client_socket.recv(1024).decode('utf-8')
+        # if data.startswith("WINDOW_SIZE:"):
+        #     window_size = int(data.split(":")[1])
+        #     print(f"Sliding window size received: {window_size}")
 
-        received_messages = {}  # Stores out-of-order messages
-        highest_contiguous_ack = -1  # Tracks the highest sequentially received message
+        received_messages = {}  # A list that stores out-of-order messages
+        highest_contiguous_ack = -1  # saves the highest number of the packet that arrived correctly is sequence.
 
         while True:
             data = recv_message_with_boundary(client_socket)
@@ -71,6 +90,11 @@ def start_server():
                 # Correct order, update highest_contiguous_ack
                 print(f"Message {message_number} arrived in the correct order: {message_data}")
                 highest_contiguous_ack = message_number
+                ack_message = f"ACK{highest_contiguous_ack}"
+                #time.sleep(5) use later
+                client_socket.send(ack_message.encode('utf-8'))
+                print(f"Sent: {ack_message}")
+
 
                 # Check for any buffered messages that can now be acknowledged
                 while highest_contiguous_ack + 1 in received_messages:

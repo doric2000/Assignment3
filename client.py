@@ -33,18 +33,17 @@ def start_client():
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((SERVER_HOST, SERVER_PORT))
 
+
     # Get parameters from user or file
     source = input("Enter 'file' to read parameters from a file or 'input' to provide manually: ").strip().lower()
     if source == 'file':
         file_path = input("Enter the file path: ").strip()
         params = read_parameters_from_file(file_path)
-        message = params['message']
-        max_size = int(params['maximum_msg_size'])
+        message = params['message'].replace('"', '')
         window_size = int(params['window_size'])
         timeout = int(params['timeout'])
     else:
         message = input("Enter the message: ").strip()
-        max_size = int(input("Enter the maximum message size: ").strip())
         window_size = int(input("Enter the sliding window size: ").strip())
         timeout = int(input("Enter the timeout in seconds: ").strip())
 
@@ -53,11 +52,9 @@ def start_client():
     max_size_response = client_socket.recv(1024).decode('utf-8')
     print(f"Max message size from server is: {max_size_response} bytes")
 
-    max_size = min(max_size, int(max_size_response))  # Adjust to server's max size
+    max_size =  int(max_size_response)  # Adjust to server's max size
     print(f"Adjusted maximum message size: {max_size} bytes")
-
-    # Send the sliding window size to the server
-    client_socket.send(f"WINDOW_SIZE:{window_size}".encode('utf-8'))
+    print(f"Timeout has set to: {timeout} seconds")
 
     # Define the message to be sent
     # Comment left unchanged to preserve your original notes
@@ -71,48 +68,62 @@ def start_client():
 
     ack_buffer = ""  # Buffer to store received ACKs
 
+
+    start_time = None  # Initialize the timer for the first message in the window
+    timer_message_index = -1  # Tracks which message's timer is active
+
     while unacknowledged < total_messages:
         # Send messages within the window
         while next_to_send < unacknowledged + window_size and next_to_send < total_messages:
             send_message_with_boundary(client_socket, next_to_send, message_parts[next_to_send])
             print(f"Sent message {next_to_send}: {message_parts[next_to_send]}")
-            next_to_send += 1
-        time.sleep(5)
-        try:
-            # Wait for ACK responses with a timeout only if there are unacknowledged messages
-            client_socket.settimeout(timeout)
-            ack_response = client_socket.recv(1024).decode('utf-8')
-            ack_buffer += ack_response  # Add the received ACKs to the buffer
 
-            # Process all ACKs in the buffer
+            if start_time is None and next_to_send == unacknowledged:  # Start timer for the first message in the window
+                start_time = time.time()
+
+            next_to_send += 1
+
+        try:
+            # Receive ACKs
+            ack_response = client_socket.recv(1024).decode('utf-8')
+            ack_buffer += ack_response
+
             while "ACK" in ack_buffer:
-                ack_index = ack_buffer.find("ACK")  # Find the next ACK
+                ack_index = ack_buffer.find("ACK")
                 try:
-                    # Extract the number starting after "ACK"
                     start_index = ack_index + 3
                     end_index = start_index
                     while end_index < len(ack_buffer) and ack_buffer[end_index].isdigit():
                         end_index += 1
-                    ack_number = int(ack_buffer[start_index:end_index])  # Extract multi-digit ACK number
+                    ack_number = int(ack_buffer[start_index:end_index])
                     print(f"Server acknowledged up to message {ack_number}")
-                    unacknowledged = max(unacknowledged, ack_number + 1)  # Slide the window
-                    ack_buffer = ack_buffer[end_index:]  # Remove processed ACK from buffer
+                    unacknowledged = max(unacknowledged, ack_number + 1)
+                    ack_buffer = ack_buffer[end_index:]
+
+                    if unacknowledged == total_messages:  # All messages acknowledged
+                        break
+
+                    # Reset timer if the first message in the window is acknowledged לבדוק למה ? זה לא נכון
+                    if start_time is not None and unacknowledged >= next_to_send:
+                        start_time = None
+
                 except ValueError:
-                    break  # Wait for more data if the ACK is incomplete
+                    break
 
-            # Reset the timeout when all ACKs are processed
-            if unacknowledged == total_messages:
-                client_socket.settimeout(None)
+        except Exception as e:
+            print(f"Error: {e}")
 
-        except socket.timeout:
-            print("Timeout occurred, resending unacknowledged messages...")
-            # Resend all unacknowledged messages
+        # Check timer expiration for the first unacknowledged message
+        if start_time is not None and time.time() - start_time > timeout:
+            print("Timer expired, resending unacknowledged messages...")
             for i in range(unacknowledged, next_to_send):
                 send_message_with_boundary(client_socket, i, message_parts[i])
                 print(f"Resent message {i}: {message_parts[i]}")
+            start_time = time.time()  # Restart the timer
 
     print("All messages sent and acknowledged!")
     client_socket.close()
+
 
 if __name__ == "__main__":
     start_client()

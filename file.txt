@@ -1,0 +1,4 @@
+message:"dor dor dor dor dor dor dor dor"
+maximum_msg_size:5
+window_size:2
+timeout:5
